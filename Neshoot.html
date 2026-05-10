@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VOCABULARY STRIKE</title>
+    <style>
+        body { margin: 0; background: #050014; color: #00f7ff; font-family: 'Courier New', monospace; overflow: hidden; user-select: none; }
+        #ui { position: absolute; top: 20px; left: 20px; z-index: 10; font-size: 1.2rem; text-shadow: 0 0 10px #00f7ff; }
+        #target-container { 
+            position: absolute; top: 20px; left: 50%; transform: translateX(-50%);
+            text-align: center; z-index: 10;
+        }
+        #word-display { font-size: 2.5rem; letter-spacing: 10px; font-weight: bold; color: #fff; text-shadow: 0 0 20px #00f7ff; }
+        .collected { color: #00f7ff; text-shadow: 0 0 10px #00f7ff; }
+        .pending { color: rgba(255,255,255,0.2); }
+        #hearts { color: #ff3b3b; font-size: 1.5rem; margin-top: 10px; }
+        #flash { 
+            position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; 
+            background: rgba(255, 0, 0, 0.5); pointer-events: none; display: none; z-index: 100;
+        }
+        #game-over {
+            display: none; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+            text-align: center; color: #ff3b3b; z-index: 200;
+        }
+        button { background: none; border: 2px solid #00f7ff; color: #00f7ff; padding: 10px 20px; cursor: pointer; font-family: inherit; }
+    </style>
+</head>
+<body>
+
+    <div id="flash"></div>
+    <div id="ui">
+        SCORE: <span id="score-val">0</span><br>
+        LEVEL: <span id="level-val">1</span>
+    </div>
+
+    <div id="target-container">
+        <div style="font-size: 0.8rem; color: #00f7ff;">COLLECT THE WORD:</div>
+        <div id="word-display"></div>
+        <div id="hearts">♥♥♥</div>
+    </div>
+
+    <div id="game-over">
+        <h1 style="font-size: 4rem;">TERMINATED</h1>
+        <button onclick="location.reload()">REBOOT SYSTEM</button>
+    </div>
+
+    <canvas id="gameCanvas"></canvas>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const flashEl = document.getElementById('flash');
+        const wordEl = document.getElementById('word-display');
+        const heartEl = document.getElementById('hearts');
+        const scoreEl = document.getElementById('score-val');
+
+        // Large Vocabulary List
+        const words = ["NEON", "CYBER", "REACT", "GALAXY", "PLASMA", "SYSTEM", "MATRIX", "ENGINE", "SOURCE", "BINARY", "NODE", "LOGIC", "PIXEL", "VECTOR", "ROBOT", "ORBIT", "VOID", "SYNTH", "HYPER", "LASER", "QUANTUM", "VELOCITY", "DYNAMIC", "DATA"];
+        
+        let score = 0, level = 1, hearts = 3, shake = 0;
+        let currentWord = "", charIndex = 0, isGameOver = false;
+        const bubbles = [], bullets = [], particles = [], powerups = [];
+        const keys = {};
+
+        function initWord() {
+            currentWord = words[Math.floor(Math.random() * words.length)];
+            charIndex = 0;
+            renderWord();
+        }
+
+        function renderWord() {
+            let html = "";
+            for(let i=0; i<currentWord.length; i++) {
+                if(i < charIndex) html += `<span class="collected">${currentWord[i]}</span>`;
+                else html += `<span class="pending">${currentWord[i]}</span>`;
+            }
+            wordEl.innerHTML = html;
+        }
+
+        function triggerError() {
+            hearts--;
+            shake = 15;
+            flashEl.style.display = 'block';
+            setTimeout(() => flashEl.style.display = 'none', 100);
+            if(window.navigator.vibrate) window.navigator.vibrate(200);
+            updateHearts();
+            if(hearts <= 0) endGame();
+        }
+
+        function updateHearts() {
+            heartEl.innerText = "♥".repeat(hearts);
+        }
+
+        function endGame() {
+            isGameOver = true;
+            document.getElementById('game-over').style.display = 'block';
+        }
+
+        const player = { x: window.innerWidth/2, y: window.innerHeight - 80, size: 30 };
+
+        function spawnBubble() {
+            if(isGameOver) return;
+            const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+            // 40% chance to spawn a letter actually needed
+            const neededLetter = Math.random() > 0.6 ? currentWord[charIndex] : alphabet[Math.floor(Math.random() * 26)];
+            
+            bubbles.push({
+                x: Math.random() * canvas.width,
+                y: -50,
+                letter: neededLetter,
+                size: 40,
+                speed: 2 + (level * 0.3)
+            });
+
+            // Random chance for Heart Powerup
+            if(Math.random() > 0.95) {
+                powerups.push({ x: Math.random() * canvas.width, y: -50, type: 'HEART', speed: 3 });
+            }
+        }
+
+        function update() {
+            if(isGameOver) return;
+
+            // Bullets
+            bullets.forEach((b, i) => {
+                b.y -= 10;
+                if(b.y < 0) bullets.splice(i, 1);
+            });
+
+            // Bubbles
+            bubbles.forEach((b, i) => {
+                b.y += b.speed;
+                bullets.forEach((bullet, bi) => {
+                    const dist = Math.hypot(bullet.x - b.x, bullet.y - b.y);
+                    if(dist < b.size/2 + 5) {
+                        bullets.splice(bi, 1);
+                        if(b.letter === currentWord[charIndex]) {
+                            charIndex++;
+                            score += 10;
+                            if(charIndex >= currentWord.length) {
+                                score += 50;
+                                level++;
+                                initWord();
+                            } else {
+                                renderWord();
+                            }
+                        } else {
+                            triggerError();
+                        }
+                        bubbles.splice(i, 1);
+                    }
+                });
+                if(b.y > canvas.height) bubbles.splice(i, 1);
+            });
+
+            // Powerups
+            powerups.forEach((p, i) => {
+                p.y += p.speed;
+                // Collision with player
+                if(Math.hypot(p.x - player.x, p.y - player.y) < 40) {
+                    if(p.type === 'HEART') hearts = Math.min(hearts + 1, 5);
+                    updateHearts();
+                    powerups.splice(i, 1);
+                }
+            });
+
+            scoreEl.innerText = score;
+            if(shake > 0) shake *= 0.9;
+        }
+
+        function draw() {
+            ctx.fillStyle = '#050014';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            ctx.save();
+            if(shake > 1) ctx.translate(Math.random()*shake, Math.random()*shake);
+
+            // Player
+            ctx.shadowBlur = 15; ctx.shadowColor = '#00f7ff';
+            ctx.fillStyle = '#00f7ff';
+            ctx.fillRect(player.x - 15, player.y, 30, 30);
+
+            // Bullets
+            ctx.shadowColor = '#ff00ff'; ctx.fillStyle = '#ff00ff';
+            bullets.forEach(b => ctx.fillRect(b.x-2, b.y, 4, 15));
+
+            // Bubbles
+            bubbles.forEach(b => {
+                ctx.shadowColor = '#00f7ff'; ctx.strokeStyle = '#00f7ff';
+                ctx.lineWidth = 2;
+                ctx.beginPath(); ctx.arc(b.x, b.y, b.size/2, 0, Math.PI*2); ctx.stroke();
+                ctx.fillStyle = '#fff';
+                ctx.font = "20px Arial";
+                ctx.textAlign = "center";
+                ctx.fillText(b.letter, b.x, b.y + 7);
+            });
+
+            // Powerups
+            powerups.forEach(p => {
+                ctx.shadowColor = '#ff3b3b'; ctx.fillStyle = '#ff3b3b';
+                ctx.font = "30px Arial";
+                ctx.fillText("♥", p.x, p.y);
+            });
+
+            ctx.restore();
+            requestAnimationFrame(() => { update(); draw(); });
+        }
+
+        window.addEventListener('resize', () => { canvas.width = window.innerWidth; canvas.height = window.innerHeight; });
+        window.addEventListener('mousemove', e => player.x = e.clientX);
+        window.addEventListener('mousedown', () => bullets.push({x: player.x, y: player.y}));
+        window.addEventListener('keydown', e => { if(e.code === 'Space') bullets.push({x: player.x, y: player.y})});
+
+        canvas.width = window.innerWidth; canvas.height = window.innerHeight;
+        initWord();
+        setInterval(spawnBubble, 1000);
+        draw();
+    </script>
+</body>
+</html>
